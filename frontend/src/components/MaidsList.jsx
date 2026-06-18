@@ -65,9 +65,15 @@ export default function MaidsList({ maids, onSelectMaid, onEditMaid, onDeleteMai
                     <span className="info-value">{maid.phone || 'N/A'}</span>
                   </div>
                   <div className="info-row">
-                    <span className="info-label">Monthly Salary:</span>
-                    <span className="info-value" style={{ color: '#fff', fontWeight: 600 }}>
-                      ₹{maid.salary.toLocaleString()}
+                    <span className="info-label">Base Salary:</span>
+                    <span className="info-value">
+                      ₹{maid.salary.toLocaleString()}/mo
+                    </span>
+                  </div>
+                  <div className="info-row">
+                    <span className="info-label">This Month's Pay:</span>
+                    <span className="info-value" style={{ color: 'var(--color-present)', fontWeight: 600 }}>
+                      ₹{maid.this_month_payable?.toLocaleString()}
                     </span>
                   </div>
                   <div className="info-row">

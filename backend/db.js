@@ -123,18 +123,34 @@ async function seedData() {
 
 async function getAllMaids(clientDate) {
   const dateStr = clientDate || new Date().toISOString().split('T')[0];
+  const dateObj = new Date(dateStr);
+  const year = dateObj.getFullYear();
+  const month = dateObj.getMonth(); // 0-indexed
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  
+  const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
   const result = await db.execute({
     sql: `
       SELECT m.*,
         (SELECT COUNT(*) FROM attendance a WHERE a.maid_id = m.id AND a.status = 'present' AND a.date >= date(?, '-30 days') AND a.date <= ?) as present_days_30_days,
         (SELECT COUNT(*) FROM attendance a WHERE a.maid_id = m.id AND a.date >= date(?, '-30 days') AND a.date <= ?) as logged_days_30_days,
-        (SELECT status FROM attendance a WHERE a.maid_id = m.id AND a.date = ?) as status_today
+        (SELECT status FROM attendance a WHERE a.maid_id = m.id AND a.date = ?) as status_today,
+        (SELECT COUNT(*) FROM attendance a WHERE a.maid_id = m.id AND (a.status = 'absent' OR a.status = 'leave_unpaid') AND a.date >= ? AND a.date <= ?) as current_month_unpaid_days
       FROM maids m
     `,
-    args: [dateStr, dateStr, dateStr, dateStr, dateStr]
+    args: [dateStr, dateStr, dateStr, dateStr, dateStr, startOfMonth, endOfMonth]
   });
-  // Convert rows to plain JSON objects
-  return result.rows.map(r => ({ ...r }));
+
+  return result.rows.map(r => {
+    const row = { ...r };
+    const unpaidDays = Number(row.current_month_unpaid_days || 0);
+    const dailyRate = row.salary / daysInMonth;
+    const deductions = unpaidDays * dailyRate;
+    row.this_month_payable = Math.max(0, Math.round(row.salary - deductions));
+    return row;
+  });
 }
 
 async function getMaidById(id) {
