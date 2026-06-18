@@ -8,10 +8,27 @@ const url = dbPath.includes('://') || dbPath.startsWith('file:')
   ? dbPath 
   : `file:${dbPath}`;
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL || url,
-  authToken: process.env.TURSO_AUTH_TOKEN || ''
-});
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
+const hasTurso = !!process.env.TURSO_DATABASE_URL;
+
+let db;
+
+if (isVercel && !hasTurso) {
+  console.warn("WARNING: Running on Vercel but TURSO_DATABASE_URL is not configured. Direct SQLite writes will be disabled. Connect Turso in the Vercel Storage tab.");
+  db = {
+    execute: async () => {
+      throw new Error("Database not initialized. Please go to your Vercel Project -> Storage tab and connect Turso SQLite to configure your production database.");
+    },
+    batch: async () => {
+      throw new Error("Database not initialized. Please go to your Vercel Project -> Storage tab and connect Turso SQLite to configure your production database.");
+    }
+  };
+} else {
+  db = createClient({
+    url: process.env.TURSO_DATABASE_URL || url,
+    authToken: process.env.TURSO_AUTH_TOKEN || ''
+  });
+}
 
 // Initialize Tables
 async function initDb() {
