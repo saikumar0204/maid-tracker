@@ -52,7 +52,8 @@ app.get('/api/health', async (req, res) => {
 // 1. Get all maids with basic stats
 app.get('/api/maids', async (req, res) => {
   try {
-    const maids = await db.getAllMaids();
+    const clientDate = req.query.date;
+    const maids = await db.getAllMaids(clientDate);
     res.json(maids);
   } catch (err) {
     console.error('Error fetching maids:', err);

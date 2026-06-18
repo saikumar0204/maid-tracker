@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function Dashboard({ maids, onSelectMaid }) {
+export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [savingId, setSavingId] = useState(null); // track which maid status is saving
@@ -22,30 +22,17 @@ export default function Dashboard({ maids, onSelectMaid }) {
     fetchAttendance(selectedDate);
   }, [selectedDate, maids]);
 
-  // Aggregate stats for TODAY
-  const getTodayStats = () => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    
-    // If selectedDate is today, we can use local state. Otherwise we default to maid status_today from maids prop.
-    const isTodaySelected = selectedDate === todayStr;
-    
+  // Aggregate stats for the selected date
+  const getDateStats = () => {
     let present = 0;
     let absent = 0;
     let leaves = 0;
 
-    if (isTodaySelected) {
-      attendanceRecords.forEach(r => {
-        if (r.status === 'present') present++;
-        else if (r.status === 'absent') absent++;
-        else if (r.status === 'leave_paid' || r.status === 'leave_unpaid') leaves++;
-      });
-    } else {
-      maids.forEach(m => {
-        if (m.status_today === 'present') present++;
-        else if (m.status_today === 'absent') absent++;
-        else if (m.status_today === 'leave_paid' || m.status_today === 'leave_unpaid') leaves++;
-      });
-    }
+    attendanceRecords.forEach(r => {
+      if (r.status === 'present') present++;
+      else if (r.status === 'absent') absent++;
+      else if (r.status === 'leave_paid' || r.status === 'leave_unpaid') leaves++;
+    });
 
     return {
       total: maids.length,
@@ -56,7 +43,7 @@ export default function Dashboard({ maids, onSelectMaid }) {
     };
   };
 
-  const stats = getTodayStats();
+  const stats = getDateStats();
 
   // Handle status update (instant save)
   const handleStatusChange = async (maidId, status, existingRemarks = '') => {
@@ -86,6 +73,8 @@ export default function Dashboard({ maids, onSelectMaid }) {
             return [...prev, updatedRecord];
           }
         });
+        // Notify parent to update 30-day stats
+        if (onAttendanceChange) onAttendanceChange();
       }
     } catch (err) {
       console.error('Error saving attendance:', err);
@@ -129,7 +118,7 @@ export default function Dashboard({ maids, onSelectMaid }) {
 
         <div className="metric-card">
           <div className="metric-details">
-            <h3>Present Today</h3>
+            <h3>Present</h3>
             <div className="metric-value" style={{ color: 'var(--color-present)' }}>{stats.present}</div>
           </div>
           <div className="metric-icon" style={{ color: 'var(--color-present)' }}>✓</div>
@@ -137,7 +126,7 @@ export default function Dashboard({ maids, onSelectMaid }) {
 
         <div className="metric-card">
           <div className="metric-details">
-            <h3>Absent Today</h3>
+            <h3>Absent</h3>
             <div className="metric-value" style={{ color: 'var(--color-absent)' }}>{stats.absent}</div>
           </div>
           <div className="metric-icon" style={{ color: 'var(--color-absent)' }}>✗</div>
@@ -145,7 +134,7 @@ export default function Dashboard({ maids, onSelectMaid }) {
 
         <div className="metric-card">
           <div className="metric-details">
-            <h3>On Leave Today</h3>
+            <h3>On Leave</h3>
             <div className="metric-value" style={{ color: 'var(--color-leave-paid)' }}>{stats.leaves}</div>
           </div>
           <div className="metric-icon" style={{ color: 'var(--color-leave-paid)' }}>✈</div>

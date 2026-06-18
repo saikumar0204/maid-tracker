@@ -20,7 +20,8 @@ export default function App() {
   // Fetch all maids
   const fetchMaids = async () => {
     try {
-      const res = await fetch('/api/maids');
+      const todayStr = new Date().toISOString().split('T')[0];
+      const res = await fetch(`/api/maids?date=${todayStr}`);
       if (res.ok) {
         const data = await res.json();
         setMaids(data);
@@ -147,6 +148,7 @@ export default function App() {
           <Dashboard 
             maids={maids} 
             onSelectMaid={handleSelectMaid} 
+            onAttendanceChange={fetchMaids}
           />
         )}
 

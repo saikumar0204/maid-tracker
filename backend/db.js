@@ -121,14 +121,18 @@ async function seedData() {
   await db.batch(attendanceStatements, "write");
 }
 
-async function getAllMaids() {
-  const result = await db.execute(`
-    SELECT m.*,
-      (SELECT COUNT(*) FROM attendance a WHERE a.maid_id = m.id AND a.status = 'present' AND a.date >= date('now', '-30 days')) as present_days_30_days,
-      (SELECT COUNT(*) FROM attendance a WHERE a.maid_id = m.id AND a.date >= date('now', '-30 days')) as logged_days_30_days,
-      (SELECT status FROM attendance a WHERE a.maid_id = m.id AND a.date = date('now', 'localtime')) as status_today
-    FROM maids m
-  `);
+async function getAllMaids(clientDate) {
+  const dateStr = clientDate || new Date().toISOString().split('T')[0];
+  const result = await db.execute({
+    sql: `
+      SELECT m.*,
+        (SELECT COUNT(*) FROM attendance a WHERE a.maid_id = m.id AND a.status = 'present' AND a.date >= date(?, '-30 days') AND a.date <= ?) as present_days_30_days,
+        (SELECT COUNT(*) FROM attendance a WHERE a.maid_id = m.id AND a.date >= date(?, '-30 days') AND a.date <= ?) as logged_days_30_days,
+        (SELECT status FROM attendance a WHERE a.maid_id = m.id AND a.date = ?) as status_today
+      FROM maids m
+    `,
+    args: [dateStr, dateStr, dateStr, dateStr, dateStr]
+  });
   // Convert rows to plain JSON objects
   return result.rows.map(r => ({ ...r }));
 }
