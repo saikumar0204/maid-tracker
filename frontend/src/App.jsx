@@ -5,7 +5,7 @@ import MaidDetails from './components/MaidDetails';
 import MaidModal from './components/MaidModal';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'maids' | 'profile-detail'
+  const [activeTab, setActiveTab] = useState('maids'); // 'dashboard' | 'maids' | 'profile-detail'
   const [maids, setMaids] = useState([]);
   const [selectedMaidId, setSelectedMaidId] = useState(null);
   
