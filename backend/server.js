@@ -23,6 +23,32 @@ db.initDb()
 
 // --- API ROUTES ---
 
+// Welcome API check route
+app.get('/api', (req, res) => {
+  res.json({ message: 'HelperFlow API is online and running successfully!' });
+});
+
+// Health check route
+app.get('/api/health', async (req, res) => {
+  try {
+    // Check database connection by making a quick lightweight query
+    const maids = await db.getAllMaids();
+    res.json({
+      status: 'healthy',
+      database: 'connected',
+      active_maids: maids.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'error',
+      database: 'disconnected',
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // 1. Get all maids with basic stats
 app.get('/api/maids', async (req, res) => {
   try {
