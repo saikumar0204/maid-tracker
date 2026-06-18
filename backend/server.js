@@ -17,14 +17,16 @@ app.use(cors());
 app.use(express.json());
 
 // Initialize Database
-db.initDb();
+db.initDb()
+  .then(() => console.log('SQLite database initialized successfully'))
+  .catch(err => console.error('Database initialization error:', err));
 
 // --- API ROUTES ---
 
 // 1. Get all maids with basic stats
-app.get('/api/maids', (req, res) => {
+app.get('/api/maids', async (req, res) => {
   try {
-    const maids = db.getAllMaids();
+    const maids = await db.getAllMaids();
     res.json(maids);
   } catch (err) {
     console.error('Error fetching maids:', err);
@@ -33,14 +35,14 @@ app.get('/api/maids', (req, res) => {
 });
 
 // 2. Get specific maid with full details and attendance history
-app.get('/api/maids/:id', (req, res) => {
+app.get('/api/maids/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const maid = db.getMaidById(id);
+    const maid = await db.getMaidById(id);
     if (!maid) {
       return res.status(404).json({ error: 'Maid not found' });
     }
-    const attendance = db.getMaidAttendance(id);
+    const attendance = await db.getMaidAttendance(id);
     res.json({
       ...maid,
       attendance
@@ -52,13 +54,13 @@ app.get('/api/maids/:id', (req, res) => {
 });
 
 // 3. Add a new maid profile
-app.post('/api/maids', (req, res) => {
+app.post('/api/maids', async (req, res) => {
   try {
     const { name, phone, role, salary, joining_date } = req.body;
     if (!name || salary === undefined || !joining_date) {
       return res.status(400).json({ error: 'Name, salary, and joining date are required' });
     }
-    const newMaid = db.insertMaid(name, phone || '', role || '', parseFloat(salary), joining_date);
+    const newMaid = await db.insertMaid(name, phone || '', role || '', parseFloat(salary), joining_date);
     res.status(201).json(newMaid);
   } catch (err) {
     console.error('Error creating maid:', err);
@@ -67,14 +69,14 @@ app.post('/api/maids', (req, res) => {
 });
 
 // 4. Update an existing maid profile
-app.put('/api/maids/:id', (req, res) => {
+app.put('/api/maids/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { name, phone, role, salary, joining_date } = req.body;
     if (!name || salary === undefined || !joining_date) {
       return res.status(400).json({ error: 'Name, salary, and joining date are required' });
     }
-    const updated = db.updateMaid(id, name, phone || '', role || '', parseFloat(salary), joining_date);
+    const updated = await db.updateMaid(id, name, phone || '', role || '', parseFloat(salary), joining_date);
     res.json(updated);
   } catch (err) {
     console.error('Error updating maid:', err);
@@ -83,10 +85,10 @@ app.put('/api/maids/:id', (req, res) => {
 });
 
 // 5. Delete a maid and their attendance history
-app.delete('/api/maids/:id', (req, res) => {
+app.delete('/api/maids/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    db.deleteMaid(id);
+    await db.deleteMaid(id);
     res.json({ success: true, message: `Maid with id ${id} deleted successfully` });
   } catch (err) {
     console.error('Error deleting maid:', err);
@@ -95,10 +97,10 @@ app.delete('/api/maids/:id', (req, res) => {
 });
 
 // 6. Get attendance for all maids on a specific date (defaults to today)
-app.get('/api/attendance', (req, res) => {
+app.get('/api/attendance', async (req, res) => {
   try {
     const date = req.query.date || new Date().toISOString().split('T')[0];
-    const records = db.getAttendanceForDate(date);
+    const records = await db.getAttendanceForDate(date);
     res.json(records);
   } catch (err) {
     console.error('Error fetching attendance:', err);
@@ -107,13 +109,13 @@ app.get('/api/attendance', (req, res) => {
 });
 
 // 7. Record/Update attendance for a single maid on a specific date
-app.post('/api/attendance', (req, res) => {
+app.post('/api/attendance', async (req, res) => {
   try {
     const { maid_id, date, status, remarks } = req.body;
     if (!maid_id || !date || !status) {
       return res.status(400).json({ error: 'maid_id, date, and status are required' });
     }
-    const record = db.saveAttendance(parseInt(maid_id), date, status, remarks);
+    const record = await db.saveAttendance(parseInt(maid_id), date, status, remarks);
     res.json(record);
   } catch (err) {
     console.error('Error saving attendance:', err);
@@ -122,7 +124,7 @@ app.post('/api/attendance', (req, res) => {
 });
 
 // 8. Record attendance for multiple maids in bulk (e.g. daily checkout)
-app.post('/api/attendance/bulk', (req, res) => {
+app.post('/api/attendance/bulk', async (req, res) => {
   try {
     const { date, records } = req.body; // records: [{ maid_id, status, remarks }]
     if (!date || !Array.isArray(records)) {
@@ -132,7 +134,7 @@ app.post('/api/attendance/bulk', (req, res) => {
     const saved = [];
     for (const rec of records) {
       if (rec.maid_id && rec.status) {
-        const savedRec = db.saveAttendance(parseInt(rec.maid_id), date, rec.status, rec.remarks);
+        const savedRec = await db.saveAttendance(parseInt(rec.maid_id), date, rec.status, rec.remarks);
         saved.push(savedRec);
       }
     }
@@ -151,7 +153,12 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(frontendDist, 'index.html'));
 });
 
-// Start the server
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+// Export app for Vercel Serverless Function wrapping
+module.exports = app;
+
+// Start the listener ONLY if running the script directly (non-serverless)
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
+}

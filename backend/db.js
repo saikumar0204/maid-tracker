@@ -1,12 +1,21 @@
-const { DatabaseSync } = require('node:sqlite');
+const { createClient } = require('@libsql/client');
 const path = require('path');
 
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'database.sqlite');
-const db = new DatabaseSync(dbPath);
+
+// For local file, libsql requires 'file:' prefix. If it's a URL (Turso), use as is.
+const url = dbPath.includes('://') || dbPath.startsWith('file:') 
+  ? dbPath 
+  : `file:${dbPath}`;
+
+const db = createClient({
+  url: process.env.TURSO_DATABASE_URL || url,
+  authToken: process.env.TURSO_AUTH_TOKEN || ''
+});
 
 // Initialize Tables
-function initDb() {
-  db.exec(`
+async function initDb() {
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS maids (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -18,7 +27,7 @@ function initDb() {
     );
   `);
 
-  db.exec(`
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS attendance (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       maid_id INTEGER NOT NULL,
@@ -30,25 +39,14 @@ function initDb() {
     );
   `);
   
-  // Seed initial data if the table is empty
-  const countStmt = db.prepare('SELECT COUNT(*) as count FROM maids');
-  const result = countStmt.get();
-  if (result.count === 0) {
-    seedData();
+  const result = await db.execute('SELECT COUNT(*) as count FROM maids');
+  const count = result.rows[0]?.count || 0;
+  if (count === 0) {
+    await seedData();
   }
 }
 
-function seedData() {
-  const insertMaid = db.prepare(`
-    INSERT INTO maids (name, phone, role, salary, joining_date)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-  
-  const insertAttendance = db.prepare(`
-    INSERT INTO attendance (maid_id, date, status, remarks)
-    VALUES (?, ?, ?, ?)
-  `);
-
+async function seedData() {
   // Insert some sample maids
   const maids = [
     { name: 'Kavitha Sharma', phone: '9876543210', role: 'Cleaning & Dusting', salary: 4500, joining_date: '2025-01-15' },
@@ -58,12 +56,16 @@ function seedData() {
 
   const maidIds = [];
   for (const m of maids) {
-    const res = insertMaid.run(m.name, m.phone, m.role, m.salary, m.joining_date);
-    maidIds.push(res.lastInsertRowid);
+    const res = await db.execute({
+      sql: `INSERT INTO maids (name, phone, role, salary, joining_date) VALUES (?, ?, ?, ?, ?)`,
+      args: [m.name, m.phone, m.role, m.salary, m.joining_date]
+    });
+    maidIds.push(Number(res.lastInsertRowid));
   }
 
-  // Seed attendance for the last 35 days (some present, some absent, some leaves)
+  // Seed attendance for the last 35 days
   const today = new Date();
+  const attendanceStatements = [];
   for (let i = 0; i < 35; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
@@ -71,105 +73,120 @@ function seedData() {
 
     // Kavitha (usually present, occasional absent on Sundays)
     const dayOfWeek = d.getDay();
-    if (dayOfWeek === 0) {
-      insertAttendance.run(maidIds[0], dateStr, 'absent', 'Sunday off');
-    } else {
-      insertAttendance.run(maidIds[0], dateStr, 'present', '');
-    }
+    attendanceStatements.push({
+      sql: `INSERT INTO attendance (maid_id, date, status, remarks) VALUES (?, ?, ?, ?)`,
+      args: [maidIds[0], dateStr, dayOfWeek === 0 ? 'absent' : 'present', dayOfWeek === 0 ? 'Sunday off' : '']
+    });
 
     // Lakshmi (present, had 2 unpaid leaves and 1 paid leave)
+    let status = 'present';
+    let remark = '';
     if (i === 5) {
-      insertAttendance.run(maidIds[1], dateStr, 'leave_paid', 'Sick leave');
+      status = 'leave_paid';
+      remark = 'Sick leave';
     } else if (i === 12 || i === 13) {
-      insertAttendance.run(maidIds[1], dateStr, 'leave_unpaid', 'Out of town');
-    } else {
-      insertAttendance.run(maidIds[1], dateStr, 'present', '');
+      status = 'leave_unpaid';
+      remark = 'Out of town';
     }
+    attendanceStatements.push({
+      sql: `INSERT INTO attendance (maid_id, date, status, remarks) VALUES (?, ?, ?, ?)`,
+      args: [maidIds[1], dateStr, status, remark]
+    });
 
-    // Rani (joined recently, or alternate days)
-    if (i % 2 === 0) {
-      insertAttendance.run(maidIds[2], dateStr, 'present', '');
-    } else {
-      insertAttendance.run(maidIds[2], dateStr, 'absent', 'No show');
-    }
+    // Rani (alternate days)
+    attendanceStatements.push({
+      sql: `INSERT INTO attendance (maid_id, date, status, remarks) VALUES (?, ?, ?, ?)`,
+      args: [maidIds[2], dateStr, i % 2 === 0 ? 'present' : 'absent', i % 2 === 0 ? '' : 'No show']
+    });
   }
+  
+  // Batch run in transaction
+  await db.batch(attendanceStatements, "write");
 }
 
-// Helpers
-function getAllMaids() {
-  const stmt = db.prepare(`
+async function getAllMaids() {
+  const result = await db.execute(`
     SELECT m.*,
       (SELECT COUNT(*) FROM attendance a WHERE a.maid_id = m.id AND a.status = 'present' AND a.date >= date('now', '-30 days')) as present_days_30_days,
       (SELECT COUNT(*) FROM attendance a WHERE a.maid_id = m.id AND a.date >= date('now', '-30 days')) as logged_days_30_days,
       (SELECT status FROM attendance a WHERE a.maid_id = m.id AND a.date = date('now', 'localtime')) as status_today
     FROM maids m
   `);
-  return stmt.all();
+  // Convert rows to plain JSON objects
+  return result.rows.map(r => ({ ...r }));
 }
 
-function getMaidById(id) {
-  const stmt = db.prepare('SELECT * FROM maids WHERE id = ?');
-  return stmt.get(id);
+async function getMaidById(id) {
+  const result = await db.execute({
+    sql: 'SELECT * FROM maids WHERE id = ?',
+    args: [id]
+  });
+  return result.rows[0] ? { ...result.rows[0] } : null;
 }
 
-function getMaidAttendance(maidId) {
-  const stmt = db.prepare('SELECT * FROM attendance WHERE maid_id = ? ORDER BY date DESC');
-  return stmt.all(maidId);
+async function getMaidAttendance(maidId) {
+  const result = await db.execute({
+    sql: 'SELECT * FROM attendance WHERE maid_id = ? ORDER BY date DESC',
+    args: [maidId]
+  });
+  return result.rows.map(r => ({ ...r }));
 }
 
-function getAttendanceForDate(date) {
-  const stmt = db.prepare('SELECT * FROM attendance WHERE date = ?');
-  return stmt.all(date);
+async function getAttendanceForDate(date) {
+  const result = await db.execute({
+    sql: 'SELECT * FROM attendance WHERE date = ?',
+    args: [date]
+  });
+  return result.rows.map(r => ({ ...r }));
 }
 
-function insertMaid(name, phone, role, salary, joiningDate) {
-  const stmt = db.prepare(`
-    INSERT INTO maids (name, phone, role, salary, joining_date)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-  const res = stmt.run(name, phone, role, salary, joiningDate);
-  return { id: res.lastInsertRowid, name, phone, role, salary, joining_date: joiningDate };
+async function insertMaid(name, phone, role, salary, joiningDate) {
+  const result = await db.execute({
+    sql: `INSERT INTO maids (name, phone, role, salary, joining_date) VALUES (?, ?, ?, ?, ?)`,
+    args: [name, phone, role, salary, joiningDate]
+  });
+  return { id: Number(result.lastInsertRowid), name, phone, role, salary, joining_date: joiningDate };
 }
 
-function updateMaid(id, name, phone, role, salary, joiningDate) {
-  const stmt = db.prepare(`
-    UPDATE maids
-    SET name = ?, phone = ?, role = ?, salary = ?, joining_date = ?
-    WHERE id = ?
-  `);
-  stmt.run(name, phone, role, salary, joiningDate, id);
+async function updateMaid(id, name, phone, role, salary, joiningDate) {
+  await db.execute({
+    sql: `UPDATE maids SET name = ?, phone = ?, role = ?, salary = ?, joining_date = ? WHERE id = ?`,
+    args: [name, phone, role, salary, joiningDate, id]
+  });
   return { id, name, phone, role, salary, joining_date: joiningDate };
 }
 
-function deleteMaid(id) {
-  const stmt = db.prepare('DELETE FROM maids WHERE id = ?');
-  stmt.run(id);
-  // Also clean up orphan attendance records
-  const cleanStmt = db.prepare('DELETE FROM attendance WHERE maid_id = ?');
-  cleanStmt.run(id);
+async function deleteMaid(id) {
+  await db.execute({
+    sql: 'DELETE FROM maids WHERE id = ?',
+    args: [id]
+  });
+  await db.execute({
+    sql: 'DELETE FROM attendance WHERE maid_id = ?',
+    args: [id]
+  });
   return { success: true };
 }
 
-function saveAttendance(maidId, date, status, remarks) {
-  // Check if attendance exists
-  const checkStmt = db.prepare('SELECT id FROM attendance WHERE maid_id = ? AND date = ?');
-  const existing = checkStmt.get(maidId, date);
+async function saveAttendance(maidId, date, status, remarks) {
+  const existingRes = await db.execute({
+    sql: 'SELECT id FROM attendance WHERE maid_id = ? AND date = ?',
+    args: [maidId, date]
+  });
+  const existing = existingRes.rows[0];
 
   if (existing) {
-    const updateStmt = db.prepare(`
-      UPDATE attendance
-      SET status = ?, remarks = ?
-      WHERE id = ?
-    `);
-    updateStmt.run(status, remarks || '', existing.id);
-    return { id: existing.id, maid_id: maidId, date, status, remarks };
+    await db.execute({
+      sql: `UPDATE attendance SET status = ?, remarks = ? WHERE id = ?`,
+      args: [status, remarks || '', existing.id]
+    });
+    return { id: Number(existing.id), maid_id: maidId, date, status, remarks };
   } else {
-    const insertStmt = db.prepare(`
-      INSERT INTO attendance (maid_id, date, status, remarks)
-      VALUES (?, ?, ?, ?)
-    `);
-    const res = insertStmt.run(maidId, date, status, remarks || '');
-    return { id: res.lastInsertRowid, maid_id: maidId, date, status, remarks };
+    const insertRes = await db.execute({
+      sql: `INSERT INTO attendance (maid_id, date, status, remarks) VALUES (?, ?, ?, ?)`,
+      args: [maidId, date, status, remarks || '']
+    });
+    return { id: Number(insertRes.lastInsertRowid), maid_id: maidId, date, status, remarks };
   }
 }
 
