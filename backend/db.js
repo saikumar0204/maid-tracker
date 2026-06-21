@@ -134,10 +134,10 @@ async function getAllMaids(clientDate) {
   const result = await db.execute({
     sql: `
       SELECT m.*,
-        (SELECT COUNT(*) FROM attendance a WHERE a.maid_id = m.id AND a.status = 'present' AND a.date >= date(?, '-30 days') AND a.date <= ?) as present_days_30_days,
+        (SELECT COALESCE(SUM(CASE WHEN a.status = 'present' THEN 1.0 WHEN a.status = 'half_day' THEN 0.5 ELSE 0 END), 0) FROM attendance a WHERE a.maid_id = m.id AND a.date >= date(?, '-30 days') AND a.date <= ?) as present_days_30_days,
         (SELECT COUNT(*) FROM attendance a WHERE a.maid_id = m.id AND a.date >= date(?, '-30 days') AND a.date <= ?) as logged_days_30_days,
         (SELECT status FROM attendance a WHERE a.maid_id = m.id AND a.date = ?) as status_today,
-        (SELECT COUNT(*) FROM attendance a WHERE a.maid_id = m.id AND (a.status = 'absent' OR a.status = 'leave_unpaid') AND a.date >= ? AND a.date <= ?) as current_month_unpaid_days
+        (SELECT COALESCE(SUM(CASE WHEN a.status = 'absent' THEN 1.0 WHEN a.status = 'leave_unpaid' THEN 1.0 WHEN a.status = 'half_day' THEN 0.5 ELSE 0 END), 0) FROM attendance a WHERE a.maid_id = m.id AND a.date >= ? AND a.date <= ?) as current_month_unpaid_days
       FROM maids m
     `,
     args: [dateStr, dateStr, dateStr, dateStr, dateStr, startOfMonth, endOfMonth]

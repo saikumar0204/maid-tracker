@@ -159,6 +159,7 @@ export default function App() {
             onEditMaid={handleEditClick}
             onDeleteMaid={handleDeleteClick}
             onRegisterClick={() => setIsAddOpen(true)}
+            onAttendanceChange={fetchMaids}
           />
         )}
 

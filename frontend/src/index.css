@@ -39,6 +39,10 @@
   --color-leave-unpaid-glow: rgba(245, 158, 11, 0.15);
   --color-leave-unpaid-border: rgba(245, 158, 11, 0.3);
   
+  --color-half-day: #14b8a6;
+  --color-half-day-glow: rgba(20, 184, 166, 0.15);
+  --color-half-day-border: rgba(20, 184, 166, 0.3);
+  
   --border-radius-sm: 8px;
   --border-radius-md: 16px;
   --border-radius-lg: 24px;
@@ -380,6 +384,7 @@ h1, h2, h3, h4, h5, h6 {
 .status-indicator.absent { background: var(--color-absent); box-shadow: 0 0 10px var(--color-absent); }
 .status-indicator.leave_paid { background: var(--color-leave-paid); box-shadow: 0 0 10px var(--color-leave-paid); }
 .status-indicator.leave_unpaid { background: var(--color-leave-unpaid); box-shadow: 0 0 10px var(--color-leave-unpaid); }
+.status-indicator.half_day { background: var(--color-half-day); box-shadow: 0 0 10px var(--color-half-day); }
 .status-indicator.unknown { background: var(--text-muted); }
 
 .maid-card-stats {
@@ -484,6 +489,12 @@ h1, h2, h3, h4, h5, h6 {
   background: var(--color-leave-unpaid-glow);
   border-color: var(--color-leave-unpaid-border);
   color: var(--color-leave-unpaid);
+}
+
+.status-btn.selected.half_day {
+  background: var(--color-half-day-glow);
+  border-color: var(--color-half-day-border);
+  color: var(--color-half-day);
 }
 
 /* Modals & Dialogs */
@@ -685,6 +696,12 @@ h1, h2, h3, h4, h5, h6 {
   background: var(--color-leave-unpaid-glow);
   border-color: var(--color-leave-unpaid-border);
   color: var(--color-leave-unpaid);
+}
+
+.calendar-cell.half_day {
+  background: var(--color-half-day-glow);
+  border-color: var(--color-half-day-border);
+  color: var(--color-half-day);
 }
 
 .calendar-cell.today::after {

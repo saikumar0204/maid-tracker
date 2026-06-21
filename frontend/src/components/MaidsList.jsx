@@ -1,14 +1,31 @@
-import React from 'react';
+import React, { useState } from 'react';
 
-export default function MaidsList({ maids, onSelectMaid, onEditMaid, onDeleteMaid, onRegisterClick }) {
-  
+export default function MaidsList({ maids, onSelectMaid, onEditMaid, onDeleteMaid, onRegisterClick, onAttendanceChange }) {
+  const [expandedMaidId, setExpandedMaidId] = useState(null);
+  const [savingId, setSavingId] = useState(null);
+  const [remarks, setRemarks] = useState({});
+
+  const todayStr = new Date().toISOString().split('T')[0];
+
   const getStatusLabel = (status) => {
     switch (status) {
       case 'present': return 'Present Today';
+      case 'half_day': return 'Half Day Today';
       case 'absent': return 'Absent Today';
       case 'leave_paid': return 'Paid Leave Today';
       case 'leave_unpaid': return 'Unpaid Leave Today';
-      default: return 'No Status Today';
+      default: return 'Not Marked';
+    }
+  };
+
+  const getStatusEmoji = (status) => {
+    switch (status) {
+      case 'present': return '✓';
+      case 'half_day': return '½';
+      case 'absent': return '✗';
+      case 'leave_paid': return '✈';
+      case 'leave_unpaid': return '⏸';
+      default: return '—';
     }
   };
 
@@ -17,13 +34,60 @@ export default function MaidsList({ maids, onSelectMaid, onEditMaid, onDeleteMai
     return Math.round((present / logged) * 100);
   };
 
+  const toggleAttendancePanel = (maidId) => {
+    setExpandedMaidId(prev => prev === maidId ? null : maidId);
+  };
+
+  const handleMarkAttendance = async (maidId, status) => {
+    setSavingId(maidId);
+    try {
+      const response = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          maid_id: maidId,
+          date: todayStr,
+          status,
+          remarks: remarks[maidId] || ''
+        })
+      });
+
+      if (response.ok) {
+        if (onAttendanceChange) onAttendanceChange();
+      }
+    } catch (err) {
+      console.error('Error marking attendance:', err);
+    } finally {
+      setTimeout(() => setSavingId(null), 300);
+    }
+  };
+
+  const handleRemarksSave = async (maidId, value, currentStatus) => {
+    setRemarks(prev => ({ ...prev, [maidId]: value }));
+    if (!currentStatus) return;
+    try {
+      await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          maid_id: maidId,
+          date: todayStr,
+          status: currentStatus,
+          remarks: value
+        })
+      });
+    } catch (err) {
+      console.error('Error saving remarks:', err);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2>Active Maids ({maids.length})</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-            Manage profiles and review recent attendance summary.
+            Manage profiles, mark attendance, and review recent summary.
           </p>
         </div>
         <button className="btn btn-primary" onClick={onRegisterClick}>
@@ -44,6 +108,8 @@ export default function MaidsList({ maids, onSelectMaid, onEditMaid, onDeleteMai
           {maids.map((maid) => {
             const initial = maid.name.charAt(0).toUpperCase();
             const statusClass = maid.status_today || 'unknown';
+            const isExpanded = expandedMaidId === maid.id;
+            const isSaving = savingId === maid.id;
             
             return (
               <div key={maid.id} className="maid-card">
@@ -82,6 +148,36 @@ export default function MaidsList({ maids, onSelectMaid, onEditMaid, onDeleteMai
                   </div>
                 </div>
 
+                {/* Today's Status Banner */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.6rem 0.85rem',
+                  borderRadius: 'var(--border-radius-sm)',
+                  background: statusClass !== 'unknown' 
+                    ? `var(--color-${statusClass === 'leave_paid' ? 'leave-paid' : statusClass === 'leave_unpaid' ? 'leave-unpaid' : statusClass === 'half_day' ? 'half-day' : statusClass}-glow, rgba(255,255,255,0.02))`
+                    : 'rgba(255,255,255,0.02)',
+                  border: `1px solid ${statusClass !== 'unknown' 
+                    ? `var(--color-${statusClass === 'leave_paid' ? 'leave-paid' : statusClass === 'leave_unpaid' ? 'leave-unpaid' : statusClass === 'half_day' ? 'half-day' : statusClass}-border, var(--border-card))`
+                    : 'var(--border-card)'}`,
+                  fontSize: '0.85rem',
+                  justifyContent: 'space-between'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span style={{ fontSize: '1rem' }}>{getStatusEmoji(maid.status_today)}</span>
+                    <span style={{ 
+                      fontWeight: 600, 
+                      color: statusClass !== 'unknown' 
+                        ? `var(--color-${statusClass === 'leave_paid' ? 'leave-paid' : statusClass === 'leave_unpaid' ? 'leave-unpaid' : statusClass === 'half_day' ? 'half-day' : statusClass}, var(--text-secondary))`
+                        : 'var(--text-secondary)'
+                    }}>
+                      {getStatusLabel(maid.status_today)}
+                    </span>
+                    {isSaving && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>(saving...)</span>}
+                  </div>
+                </div>
+
                 <div className="maid-card-stats">
                   <div className="stat-box">
                     <span className="stat-label">Last 30 Days</span>
@@ -97,7 +193,87 @@ export default function MaidsList({ maids, onSelectMaid, onEditMaid, onDeleteMai
                   </div>
                 </div>
 
+                {/* Expandable Attendance Panel */}
+                {isExpanded && (
+                  <div style={{
+                    padding: '1rem',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid var(--border-card)',
+                    borderRadius: 'var(--border-radius-sm)',
+                    animation: 'fadeIn 0.2s ease-out',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <h4 style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                        Mark for Today ({todayStr})
+                      </h4>
+                    </div>
+                    
+                    <div className="attendance-options" style={{ flexWrap: 'wrap' }}>
+                      <button 
+                        className={`status-btn ${maid.status_today === 'present' ? 'selected present' : ''}`}
+                        onClick={() => handleMarkAttendance(maid.id, 'present')}
+                      >
+                        Present
+                      </button>
+                      <button 
+                        className={`status-btn ${maid.status_today === 'half_day' ? 'selected half_day' : ''}`}
+                        onClick={() => handleMarkAttendance(maid.id, 'half_day')}
+                      >
+                        Half Day
+                      </button>
+                      <button 
+                        className={`status-btn ${maid.status_today === 'absent' ? 'selected absent' : ''}`}
+                        onClick={() => handleMarkAttendance(maid.id, 'absent')}
+                      >
+                        Absent
+                      </button>
+                      <button 
+                        className={`status-btn ${maid.status_today === 'leave_paid' ? 'selected leave_paid' : ''}`}
+                        onClick={() => handleMarkAttendance(maid.id, 'leave_paid')}
+                      >
+                        Paid Leave
+                      </button>
+                      <button 
+                        className={`status-btn ${maid.status_today === 'leave_unpaid' ? 'selected leave_unpaid' : ''}`}
+                        onClick={() => handleMarkAttendance(maid.id, 'leave_unpaid')}
+                      >
+                        Unpaid Leave
+                      </button>
+                    </div>
+
+                    <input 
+                      type="text" 
+                      placeholder="Add a note (optional)..." 
+                      className="form-input" 
+                      style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}
+                      defaultValue={remarks[maid.id] || ''}
+                      onBlur={(e) => handleRemarksSave(maid.id, e.target.value, maid.status_today)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleRemarksSave(maid.id, e.target.value, maid.status_today);
+                          e.target.blur();
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+
                 <div className="maid-card-footer">
+                  <button 
+                    type="button"
+                    className={`btn ${isExpanded ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleAttendancePanel(maid.id);
+                    }}
+                  >
+                    {isExpanded ? '✓ Marking' : '📋 Mark Attendance'}
+                  </button>
                   <button 
                     type="button"
                     className="btn btn-secondary" 

@@ -27,10 +27,12 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
     let present = 0;
     let absent = 0;
     let leaves = 0;
+    let halfDays = 0;
 
     attendanceRecords.forEach(r => {
       if (r.status === 'present') present++;
       else if (r.status === 'absent') absent++;
+      else if (r.status === 'half_day') halfDays++;
       else if (r.status === 'leave_paid' || r.status === 'leave_unpaid') leaves++;
     });
 
@@ -39,7 +41,8 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
       present,
       absent,
       leaves,
-      unmarked: Math.max(0, maids.length - (present + absent + leaves))
+      halfDays,
+      unmarked: Math.max(0, maids.length - (present + absent + leaves + halfDays))
     };
   };
 
@@ -139,6 +142,14 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
           </div>
           <div className="metric-icon" style={{ color: 'var(--color-leave-paid)' }}>✈</div>
         </div>
+
+        <div className="metric-card">
+          <div className="metric-details">
+            <h3>Half Day</h3>
+            <div className="metric-value" style={{ color: 'var(--color-half-day)' }}>{stats.halfDays}</div>
+          </div>
+          <div className="metric-icon" style={{ color: 'var(--color-half-day)' }}>½</div>
+        </div>
       </div>
 
       {/* 2. Main Daily Log Layout */}
@@ -197,6 +208,12 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
                           onClick={() => handleStatusChange(maid.id, 'present', currentRemarks)}
                         >
                           Present
+                        </button>
+                        <button 
+                          className={`status-btn ${currentStatus === 'half_day' ? 'selected half_day' : ''}`}
+                          onClick={() => handleStatusChange(maid.id, 'half_day', currentRemarks)}
+                        >
+                          Half Day
                         </button>
                         <button 
                           className={`status-btn ${currentStatus === 'absent' ? 'selected absent' : ''}`}
@@ -275,6 +292,14 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
                 <div>
                   <h4 style={{ fontSize: '0.9rem', fontWeight: 600 }}>Unpaid Leave</h4>
                   <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Informed leave. Deducts daily rate from monthly salary.</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                <span className="status-indicator half_day" style={{ marginTop: '5px' }}></span>
+                <div>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: 600 }}>Half Day</h4>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Worked partial day. Deducts half the daily rate from salary.</p>
                 </div>
               </div>
             </div>

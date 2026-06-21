@@ -75,6 +75,7 @@ export default function MaidDetails({ maidId, onBack }) {
     let absent = 0;
     let leavePaid = 0;
     let leaveUnpaid = 0;
+    let halfDay = 0;
     let unmarked = 0;
 
     for (let day = 1; day <= totalDays; day++) {
@@ -85,13 +86,14 @@ export default function MaidDetails({ maidId, onBack }) {
         else if (rec.status === 'absent') absent++;
         else if (rec.status === 'leave_paid') leavePaid++;
         else if (rec.status === 'leave_unpaid') leaveUnpaid++;
+        else if (rec.status === 'half_day') halfDay++;
       } else {
         unmarked++;
       }
     }
 
-    // Salary deductions logic: absent + leave_unpaid are deducted
-    const deductionDays = absent + leaveUnpaid;
+    // Salary deductions logic: absent + leave_unpaid fully deducted, half_day deducts half
+    const deductionDays = absent + leaveUnpaid + (halfDay * 0.5);
     const deductions = deductionDays * dailyRate;
     const netSalary = Math.max(0, maid.salary - deductions);
 
@@ -101,6 +103,7 @@ export default function MaidDetails({ maidId, onBack }) {
       absent,
       leavePaid,
       leaveUnpaid,
+      halfDay,
       unmarked,
       deductions,
       netSalary
@@ -292,6 +295,10 @@ export default function MaidDetails({ maidId, onBack }) {
                 <span className="info-label">Days Absent:</span>
                 <span className="info-value">{salaryStats.absent}</span>
               </div>
+              <div className="info-row" style={{ color: 'var(--color-half-day)' }}>
+                <span className="info-label">Half Days:</span>
+                <span className="info-value">{salaryStats.halfDay}</span>
+              </div>
               <div className="info-row" style={{ borderBottom: 'none', borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
                 <span className="info-label" style={{ fontWeight: 600 }}>Deductions:</span>
                 <span className="info-value" style={{ color: 'var(--color-absent)', fontWeight: 600 }}>
@@ -353,6 +360,10 @@ export default function MaidDetails({ maidId, onBack }) {
               <span>Unpaid Leave</span>
             </div>
             <div className="legend-item">
+              <span className="legend-color" style={{ background: 'var(--color-half-day-glow)', border: '1px solid var(--color-half-day-border)' }}></span>
+              <span>Half Day</span>
+            </div>
+            <div className="legend-item">
               <span className="legend-color" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-card)' }}></span>
               <span>Unmarked</span>
             </div>
@@ -383,6 +394,13 @@ export default function MaidDetails({ maidId, onBack }) {
                       onClick={() => setEditingStatus('present')}
                     >
                       Present
+                    </button>
+                    <button 
+                      type="button"
+                      className={`status-btn ${editingStatus === 'half_day' ? 'selected half_day' : ''}`}
+                      onClick={() => setEditingStatus('half_day')}
+                    >
+                      Half Day
                     </button>
                     <button 
                       type="button"
