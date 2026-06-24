@@ -5,6 +5,10 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [savingId, setSavingId] = useState(null); // track which maid status is saving
   const [isTriggeringAll, setIsTriggeringAll] = useState(false);
+  const [selectedOwner, setSelectedOwner] = useState('');
+  const [isTriggeringOwner, setIsTriggeringOwner] = useState(false);
+
+  const uniqueOwners = [...new Set(maids.map(m => m.owner_phone).filter(Boolean))];
 
   // Fetch attendance for the selected date
   const fetchAttendance = async (date) => {
@@ -156,6 +160,28 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
     setIsTriggeringAll(false);
   };
 
+  const handleTriggerOwner = async () => {
+    if (!selectedOwner) return alert("Select an owner first");
+    setIsTriggeringOwner(true);
+    try {
+      const res = await fetch('/api/whatsapp/trigger', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner_phone: selectedOwner }) 
+      });
+      if (res.ok) {
+        alert(`WhatsApp reminder sent to ${selectedOwner}!`);
+      } else {
+        const err = await res.json();
+        alert('Failed: ' + err.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to trigger message');
+    }
+    setIsTriggeringOwner(false);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       
@@ -214,14 +240,36 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
                 Select a date and click to record presence or leaves instantly.
               </p>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.25rem', borderRadius: 'var(--border-radius-sm)' }}>
+                <select 
+                  className="form-input" 
+                  style={{ padding: '0.5rem', width: 'auto', minWidth: '150px' }}
+                  value={selectedOwner}
+                  onChange={e => setSelectedOwner(e.target.value)}
+                >
+                  <option value="">Select Owner...</option>
+                  {uniqueOwners.map(phone => (
+                    <option key={phone} value={phone}>{phone}</option>
+                  ))}
+                </select>
+                <button 
+                  className="btn btn-secondary" 
+                  style={{ padding: '0.5rem 1rem' }}
+                  onClick={handleTriggerOwner}
+                  disabled={!selectedOwner || isTriggeringOwner}
+                >
+                  {isTriggeringOwner ? 'Sending...' : 'Send'}
+                </button>
+              </div>
+
               <button 
                 className="btn btn-primary" 
-                style={{ background: 'var(--success)' }}
+                style={{ background: 'var(--success)', padding: '0.65rem 1.25rem' }}
                 onClick={handleTriggerAll}
                 disabled={isTriggeringAll}
               >
-                {isTriggeringAll ? 'Sending...' : 'Send WhatsApp to All Owners'}
+                {isTriggeringAll ? 'Sending to All...' : 'Send to All Owners'}
               </button>
               <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem', marginBottom: 0 }}>
                 <label className="form-label" style={{ margin: 0 }}>Date:</label>
