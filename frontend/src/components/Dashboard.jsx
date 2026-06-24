@@ -4,6 +4,7 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [savingId, setSavingId] = useState(null); // track which maid status is saving
+  const [isTriggeringAll, setIsTriggeringAll] = useState(false);
 
   // Fetch attendance for the selected date
   const fetchAttendance = async (date) => {
@@ -133,6 +134,28 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
     }
   };
 
+  const handleTriggerAll = async () => {
+    setIsTriggeringAll(true);
+    try {
+      const res = await fetch('/api/whatsapp/trigger', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}) // Empty body triggers all
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(data.message || 'WhatsApp reminders sent to all owners!');
+      } else {
+        const err = await res.json();
+        alert('Failed: ' + err.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to trigger messages');
+    }
+    setIsTriggeringAll(false);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       
@@ -191,15 +214,25 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
                 Select a date and click to record presence or leaves instantly.
               </p>
             </div>
-            <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem' }}>
-              <label className="form-label" style={{ margin: 0 }}>Date:</label>
-              <input 
-                type="date" 
-                className="form-input" 
-                style={{ padding: '0.5rem' }} 
-                value={selectedDate} 
-                onChange={(e) => setSelectedDate(e.target.value)}
-              />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <button 
+                className="btn btn-primary" 
+                style={{ background: 'var(--success)' }}
+                onClick={handleTriggerAll}
+                disabled={isTriggeringAll}
+              >
+                {isTriggeringAll ? 'Sending...' : 'Send WhatsApp to All Owners'}
+              </button>
+              <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem', marginBottom: 0 }}>
+                <label className="form-label" style={{ margin: 0 }}>Date:</label>
+                <input 
+                  type="date" 
+                  className="form-input" 
+                  style={{ padding: '0.5rem' }} 
+                  value={selectedDate} 
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 

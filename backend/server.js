@@ -315,12 +315,32 @@ app.post('/api/settings', async (req, res) => {
 app.post('/api/whatsapp/trigger', async (req, res) => {
   try {
     const { owner_phone } = req.body;
-    if (!owner_phone) {
-      return res.status(400).json({ error: 'owner_phone is required.' });
+    if (owner_phone) {
+      await sendWhatsAppTemplate(owner_phone);
+      whatsappSessions[owner_phone] = { step: 1, maidId: null };
+      return res.json({ success: true, message: 'Message triggered' });
+    } else {
+      // Trigger all owners
+      const maids = await db.getAllMaids();
+      if (maids.length === 0) return res.status(400).json({ error: 'No maids found.' });
+
+      const maidsByOwner = {};
+      maids.forEach(m => {
+        if (m.owner_phone) {
+          if (!maidsByOwner[m.owner_phone]) maidsByOwner[m.owner_phone] = [];
+          maidsByOwner[m.owner_phone].push(m);
+        }
+      });
+
+      const ownerPhones = Object.keys(maidsByOwner);
+      if (ownerPhones.length === 0) return res.status(400).json({ error: 'No owner phones configured.' });
+
+      for (const phone of ownerPhones) {
+        await sendWhatsAppTemplate(phone);
+        whatsappSessions[phone] = { step: 1, maidId: null };
+      }
+      return res.json({ success: true, message: `Messages triggered to ${ownerPhones.length} owners.` });
     }
-    await sendWhatsAppTemplate(owner_phone);
-    whatsappSessions[owner_phone] = { step: 1, maidId: null };
-    res.json({ success: true, message: 'Message triggered' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to trigger message' });
   }
