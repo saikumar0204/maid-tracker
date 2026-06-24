@@ -31,41 +31,15 @@ const whatsappSessions = {}; // { [phone]: { step: 1|2, maidId: null } }
 const WA_TOKEN = process.env.WA_ACCESS_TOKEN || 'EAASvcVJMZBWgBRZBv9iM2tl1vSuMo0WMicww56zRXlEgjHBaH0k1ZA9bOYjQCrPnX6vji27EJgoexyA8WV0znGU8XObXcl6u99f303isPFJbyO3StrJn1ZC6HzwsNJMJ2Wcf2sjMJTuTBi03HVOS5TiRc2FdP4xd7E07L0G1kVNimHaZCXzkcUOZB9iR4uWrSQ0F3BdnNxVTlAGBQ7ZAyhZBvHMkdqgOIhZCxw9WXw2dnrSB4fcjGJ4hHTIk7uHCvlqn3rJ5UpvD3WUqqjLBCHDYhbZBdc';
 const WA_PHONE_ID = process.env.WA_PHONE_ID || '1222753480912642';
 
-async function sendWhatsAppTemplate(to) {
-  const payload = {
-    messaging_product: "whatsapp",
-    to: to,
-    type: "template",
-    template: {
-      name: "jaspers_market_order_confirmation_v1",
-      language: { code: "en_US" },
-      components: [
-        {
-          type: "body",
-          parameters: [
-            { type: "text", text: "Owner" },
-            { type: "text", text: "Update Attendance" },
-            { type: "text", text: new Date().toISOString().split('T')[0] }
-          ]
-        }
-      ]
-    }
-  };
-
-  try {
-    const res = await fetch(`https://graph.facebook.com/v25.0/${WA_PHONE_ID}/messages`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${WA_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    console.log("WhatsApp Send Result:", data);
-  } catch (err) {
-    console.error("WhatsApp Send Error:", err);
-  }
+async function sendAttendancePrompt(ownerPhone, ownerMaids) {
+  const today = new Date().toISOString().split('T')[0];
+  let text = `You have to add attendance for today date : ${today}\n\nAvailable maids list:\n`;
+  ownerMaids.forEach(m => {
+    text += `ID ${m.id}: ${m.name}\n`;
+  });
+  text += `\nPlease select the maid from the list with id`;
+  
+  await sendWhatsAppText(ownerPhone, text);
 }
 
 async function sendWhatsAppText(to, textBody) {
@@ -109,7 +83,7 @@ cron.schedule('0 22 * * *', async () => {
     });
 
     for (const [ownerPhone, ownerMaids] of Object.entries(maidsByOwner)) {
-      await sendWhatsAppTemplate(ownerPhone);
+      await sendAttendancePrompt(ownerPhone, ownerMaids);
       whatsappSessions[ownerPhone] = { step: 1, maidId: null };
     }
   } catch (err) {
@@ -316,7 +290,12 @@ app.post('/api/whatsapp/trigger', async (req, res) => {
   try {
     const { owner_phone } = req.body;
     if (owner_phone) {
-      await sendWhatsAppTemplate(owner_phone);
+      const maids = await db.getAllMaids();
+      const ownerMaids = maids.filter(m => m.owner_phone && m.owner_phone.includes(owner_phone));
+      if (ownerMaids.length === 0) {
+        return res.status(400).json({ error: 'No maids found for this owner.' });
+      }
+      await sendAttendancePrompt(owner_phone, ownerMaids);
       whatsappSessions[owner_phone] = { step: 1, maidId: null };
       return res.json({ success: true, message: 'Message triggered' });
     } else {
@@ -336,7 +315,7 @@ app.post('/api/whatsapp/trigger', async (req, res) => {
       if (ownerPhones.length === 0) return res.status(400).json({ error: 'No owner phones configured.' });
 
       for (const phone of ownerPhones) {
-        await sendWhatsAppTemplate(phone);
+        await sendAttendancePrompt(phone, maidsByOwner[phone]);
         whatsappSessions[phone] = { step: 1, maidId: null };
       }
       return res.json({ success: true, message: `Messages triggered to ${ownerPhones.length} owners.` });
@@ -393,12 +372,8 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
            await sendWhatsAppText(phone, "We couldn't find any maids associated with your phone number.");
            return res.sendStatus(200);
         }
-        let bodyText = `Please reply with the ID of the maid you want to update:\n\n`;
-        ownerMaids.forEach(m => {
-          bodyText += `ID ${m.id}: ${m.name}\n`;
-        });
+        await sendAttendancePrompt(phone, ownerMaids);
         whatsappSessions[phone] = { step: 1, maidId: null };
-        await sendWhatsAppText(phone, bodyText);
         return res.sendStatus(200);
       }
 
@@ -427,7 +402,7 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
 
         session.step = 2;
         session.maidId = maid.id;
-        await sendWhatsAppText(phone, `You selected ${maid.name}.\nPlease reply with attendance status:\n1: Present\n2: Absent\n3: Half-Day\n4: Paid Leave`);
+        await sendWhatsAppText(phone, `These are possible markups:\n1: Present\n2: Absent\n3: Half-Day\n4: Paid Leave\n\nPlease select it or give the number accordingly.`);
         
       } else if (session.step === 2) {
         let status = null;
@@ -447,7 +422,7 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
         try {
           const record = await db.saveAttendance(session.maidId, today, status, 'Updated via WhatsApp');
           notifySseClients(record); // Notify frontend instantly
-          await sendWhatsAppText(phone, `✅ Attendance updated to ${status} for ${maid.name} (${today}).\n\nTo update another maid, reply with their ID. Or type "menu" to see the list again.`);
+          await sendWhatsAppText(phone, `Thank you. Attendance updated.`);
           session.step = 1;
           session.maidId = null;
         } catch (err) {
