@@ -96,14 +96,22 @@ async function sendWhatsAppText(to, textBody) {
 cron.schedule('0 22 * * *', async () => {
   console.log('Running daily WhatsApp attendance reminder...');
   try {
-    const ownerPhone = await db.getSetting('owner_phone');
-    if (!ownerPhone) {
-      console.log('No owner phone configured. Skipping daily reminder.');
-      return;
+    const maids = await db.getAllMaids();
+    if (maids.length === 0) return;
+
+    // Group maids by owner_phone
+    const maidsByOwner = {};
+    maids.forEach(m => {
+      if (m.owner_phone) {
+        if (!maidsByOwner[m.owner_phone]) maidsByOwner[m.owner_phone] = [];
+        maidsByOwner[m.owner_phone].push(m);
+      }
+    });
+
+    for (const [ownerPhone, ownerMaids] of Object.entries(maidsByOwner)) {
+      await sendWhatsAppTemplate(ownerPhone);
+      whatsappSessions[ownerPhone] = { step: 1, maidId: null };
     }
-    
-    await sendWhatsAppTemplate(ownerPhone);
-    whatsappSessions[ownerPhone] = { step: 1, maidId: null };
   } catch (err) {
     console.error('Error in cron job:', err);
   }
@@ -178,11 +186,11 @@ app.get('/api/maids/:id', async (req, res) => {
 // 3. Add a new maid profile
 app.post('/api/maids', async (req, res) => {
   try {
-    const { name, phone, role, salary, joining_date } = req.body;
+    const { name, phone, role, salary, joining_date, owner_phone } = req.body;
     if (!name || salary === undefined || !joining_date) {
       return res.status(400).json({ error: 'Name, salary, and joining date are required' });
     }
-    const newMaid = await db.insertMaid(name, phone || '', role || '', parseFloat(salary), joining_date);
+    const newMaid = await db.insertMaid(name, phone || '', role || '', parseFloat(salary), joining_date, owner_phone || '');
     res.status(201).json(newMaid);
   } catch (err) {
     console.error('Error creating maid:', err);
@@ -194,11 +202,11 @@ app.post('/api/maids', async (req, res) => {
 app.put('/api/maids/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, phone, role, salary, joining_date } = req.body;
+    const { name, phone, role, salary, joining_date, owner_phone } = req.body;
     if (!name || salary === undefined || !joining_date) {
       return res.status(400).json({ error: 'Name, salary, and joining date are required' });
     }
-    const updated = await db.updateMaid(id, name, phone || '', role || '', parseFloat(salary), joining_date);
+    const updated = await db.updateMaid(id, name, phone || '', role || '', parseFloat(salary), joining_date, owner_phone || '');
     res.json(updated);
   } catch (err) {
     console.error('Error updating maid:', err);
@@ -306,12 +314,12 @@ app.post('/api/settings', async (req, res) => {
 // 11. Manual Trigger API
 app.post('/api/whatsapp/trigger', async (req, res) => {
   try {
-    const ownerPhone = await db.getSetting('owner_phone');
-    if (!ownerPhone) {
-      return res.status(400).json({ error: 'Owner phone not configured in settings.' });
+    const { owner_phone } = req.body;
+    if (!owner_phone) {
+      return res.status(400).json({ error: 'owner_phone is required.' });
     }
-    await sendWhatsAppTemplate(ownerPhone);
-    whatsappSessions[ownerPhone] = { step: 1, maidId: null };
+    await sendWhatsAppTemplate(owner_phone);
+    whatsappSessions[owner_phone] = { step: 1, maidId: null };
     res.json({ success: true, message: 'Message triggered' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to trigger message' });
@@ -360,8 +368,13 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
       // Handle "hi" / "menu"
       if (text === 'hi' || text === 'menu' || text === 'hello') {
         const maids = await db.getAllMaids();
+        const ownerMaids = maids.filter(m => m.owner_phone && m.owner_phone.includes(phone));
+        if (ownerMaids.length === 0) {
+           await sendWhatsAppText(phone, "We couldn't find any maids associated with your phone number.");
+           return res.sendStatus(200);
+        }
         let bodyText = `Please reply with the ID of the maid you want to update:\n\n`;
-        maids.forEach(m => {
+        ownerMaids.forEach(m => {
           bodyText += `ID ${m.id}: ${m.name}\n`;
         });
         whatsappSessions[phone] = { step: 1, maidId: null };
@@ -384,6 +397,11 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
         const maid = await db.getMaidById(maidId);
         if (!maid) {
           await sendWhatsAppText(phone, `We could not find a maid with ID ${maidId}. Please try again.`);
+          return res.sendStatus(200);
+        }
+
+        if (!maid.owner_phone || !maid.owner_phone.includes(phone)) {
+          await sendWhatsAppText(phone, `You are not authorized to update attendance for ${maid.name}.`);
           return res.sendStatus(200);
         }
 

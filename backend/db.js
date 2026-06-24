@@ -40,6 +40,7 @@ async function initDb() {
       role TEXT,
       salary REAL NOT NULL,
       joining_date TEXT NOT NULL,
+      owner_phone TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
   `);
@@ -55,6 +56,9 @@ async function initDb() {
       UNIQUE(maid_id, date)
     );
   `);
+  
+  // Attempt to add the new column to existing tables (will silently fail if it already exists)
+  await db.execute('ALTER TABLE maids ADD COLUMN owner_phone TEXT').catch(() => {});
   
   await db.execute(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -81,8 +85,8 @@ async function seedData() {
   const maidIds = [];
   for (const m of maids) {
     const res = await db.execute({
-      sql: `INSERT INTO maids (name, phone, role, salary, joining_date) VALUES (?, ?, ?, ?, ?)`,
-      args: [m.name, m.phone, m.role, m.salary, m.joining_date]
+      sql: `INSERT INTO maids (name, phone, role, salary, joining_date, owner_phone) VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [m.name, m.phone, m.role, m.salary, m.joining_date, '']
     });
     maidIds.push(Number(res.lastInsertRowid));
   }
@@ -192,20 +196,20 @@ async function getAttendanceForDate(date) {
   return result.rows.map(r => ({ ...r }));
 }
 
-async function insertMaid(name, phone, role, salary, joiningDate) {
+async function insertMaid(name, phone, role, salary, joiningDate, ownerPhone) {
   const result = await db.execute({
-    sql: `INSERT INTO maids (name, phone, role, salary, joining_date) VALUES (?, ?, ?, ?, ?)`,
-    args: [name, phone, role, salary, joiningDate]
+    sql: `INSERT INTO maids (name, phone, role, salary, joining_date, owner_phone) VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [name, phone, role, salary, joiningDate, ownerPhone || '']
   });
-  return { id: Number(result.lastInsertRowid), name, phone, role, salary, joining_date: joiningDate };
+  return { id: Number(result.lastInsertRowid), name, phone, role, salary, joining_date: joiningDate, owner_phone: ownerPhone };
 }
 
-async function updateMaid(id, name, phone, role, salary, joiningDate) {
+async function updateMaid(id, name, phone, role, salary, joiningDate, ownerPhone) {
   await db.execute({
-    sql: `UPDATE maids SET name = ?, phone = ?, role = ?, salary = ?, joining_date = ? WHERE id = ?`,
-    args: [name, phone, role, salary, joiningDate, id]
+    sql: `UPDATE maids SET name = ?, phone = ?, role = ?, salary = ?, joining_date = ?, owner_phone = ? WHERE id = ?`,
+    args: [name, phone, role, salary, joiningDate, ownerPhone || '', id]
   });
-  return { id, name, phone, role, salary, joining_date: joiningDate };
+  return { id, name, phone, role, salary, joining_date: joiningDate, owner_phone: ownerPhone };
 }
 
 async function deleteMaid(id) {

@@ -5,10 +5,35 @@ export default function MaidDetails({ maidId, onBack }) {
   const [currentDate, setCurrentDate] = useState(new Date()); // tracks calendar navigation month/year
   const [loading, setLoading] = useState(true);
   
-  // Local state to manage active day edit popover
   const [editingDay, setEditingDay] = useState(null); // format: { dateStr, dayNum, record }
   const [editingStatus, setEditingStatus] = useState('');
   const [editingRemarks, setEditingRemarks] = useState('');
+  const [isTriggeringMsg, setIsTriggeringMsg] = useState(false);
+
+  const handleTriggerMessage = async () => {
+    if (!maid.owner_phone) {
+      alert('No owner phone configured for this maid.');
+      return;
+    }
+    setIsTriggeringMsg(true);
+    try {
+      const res = await fetch('/api/whatsapp/trigger', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner_phone: maid.owner_phone })
+      });
+      if (res.ok) {
+        alert('WhatsApp reminder sent to owner!');
+      } else {
+        const err = await res.json();
+        alert('Failed: ' + err.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to trigger message');
+    }
+    setIsTriggeringMsg(false);
+  };
 
   // Fetch full maid details and history
   const fetchMaidDetails = async () => {
@@ -253,7 +278,22 @@ export default function MaidDetails({ maidId, onBack }) {
                 <span className="info-label">Joining Date:</span>
                 <span className="info-value">{maid.joining_date}</span>
               </div>
+              <div className="info-row">
+                <span className="info-label">Owner WhatsApp:</span>
+                <span className="info-value">{maid.owner_phone || 'Not Set'}</span>
+              </div>
             </div>
+
+            {maid.owner_phone && (
+              <button 
+                className="primary-btn" 
+                style={{ width: '100%', marginTop: '1rem', background: 'var(--success)' }} 
+                onClick={handleTriggerMessage} 
+                disabled={isTriggeringMsg}
+              >
+                {isTriggeringMsg ? 'Sending...' : 'Send WhatsApp Reminder'}
+              </button>
+            )}
           </div>
 
           {/* Salary Calculator Slip */}

@@ -6,6 +6,7 @@ export default function MaidModal({ isOpen, onClose, onSubmit, maid }) {
   const [role, setRole] = useState('');
   const [salary, setSalary] = useState('');
   const [joiningDate, setJoiningDate] = useState('');
+  const [ownerPhone, setOwnerPhone] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -15,11 +16,13 @@ export default function MaidModal({ isOpen, onClose, onSubmit, maid }) {
       setRole(maid.role || '');
       setSalary(maid.salary || '');
       setJoiningDate(maid.joining_date || '');
+      setOwnerPhone(maid.owner_phone || '');
     } else {
       setName('');
       setPhone('');
       setRole('');
       setSalary('');
+      setOwnerPhone('');
       // Default to today
       setJoiningDate(new Date().toISOString().split('T')[0]);
     }
@@ -48,7 +51,8 @@ export default function MaidModal({ isOpen, onClose, onSubmit, maid }) {
       phone: phone.trim(),
       role: role.trim(),
       salary: parseFloat(salary),
-      joining_date: joiningDate
+      joining_date: joiningDate,
+      owner_phone: ownerPhone.trim()
     });
   };
 
@@ -87,6 +91,17 @@ export default function MaidModal({ isOpen, onClose, onSubmit, maid }) {
               placeholder="e.g. 9876543210" 
               value={phone} 
               onChange={(e) => setPhone(e.target.value)} 
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Owner/Employer WhatsApp (with country code)</label>
+            <input 
+              type="tel" 
+              className="form-input" 
+              placeholder="e.g. 919876543210" 
+              value={ownerPhone} 
+              onChange={(e) => setOwnerPhone(e.target.value)} 
             />
           </div>
 
