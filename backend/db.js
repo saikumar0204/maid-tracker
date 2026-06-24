@@ -56,6 +56,13 @@ async function initDb() {
     );
   `);
   
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+  `);
+  
   const result = await db.execute('SELECT COUNT(*) as count FROM maids');
   const count = result.rows[0]?.count || 0;
   if (count === 0) {
@@ -161,6 +168,14 @@ async function getMaidById(id) {
   return result.rows[0] ? { ...result.rows[0] } : null;
 }
 
+async function getMaidByPhone(phone) {
+  const result = await db.execute({
+    sql: 'SELECT * FROM maids WHERE phone = ?',
+    args: [phone]
+  });
+  return result.rows[0] ? { ...result.rows[0] } : null;
+}
+
 async function getMaidAttendance(maidId) {
   const result = await db.execute({
     sql: 'SELECT * FROM attendance WHERE maid_id = ? ORDER BY date DESC',
@@ -227,14 +242,33 @@ async function saveAttendance(maidId, date, status, remarks) {
   }
 }
 
+async function getSetting(key) {
+  const result = await db.execute({
+    sql: 'SELECT value FROM settings WHERE key = ?',
+    args: [key]
+  });
+  return result.rows[0] ? result.rows[0].value : null;
+}
+
+async function saveSetting(key, value) {
+  await db.execute({
+    sql: `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    args: [key, value]
+  });
+  return { key, value };
+}
+
 module.exports = {
   initDb,
   getAllMaids,
   getMaidById,
+  getMaidByPhone,
   getMaidAttendance,
   getAttendanceForDate,
   insertMaid,
   updateMaid,
   deleteMaid,
-  saveAttendance
+  saveAttendance,
+  getSetting,
+  saveSetting
 };

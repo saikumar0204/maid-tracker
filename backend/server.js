@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const db = require('./db');
+const cron = require('node-cron');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -15,6 +16,100 @@ app.use((req, res, next) => {
 // Enable CORS and JSON parsing
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// SSE Clients
+let sseClients = [];
+function notifySseClients(data) {
+  sseClients.forEach(client => client.write(`data: ${JSON.stringify(data)}\n\n`));
+}
+
+// Session Store for WhatsApp Conversational Flow
+const whatsappSessions = {}; // { [phone]: { step: 1|2, maidId: null } }
+
+// WhatsApp Cloud API Configuration
+const WA_TOKEN = process.env.WA_ACCESS_TOKEN || 'EAASvcVJMZBWgBRZBv9iM2tl1vSuMo0WMicww56zRXlEgjHBaH0k1ZA9bOYjQCrPnX6vji27EJgoexyA8WV0znGU8XObXcl6u99f303isPFJbyO3StrJn1ZC6HzwsNJMJ2Wcf2sjMJTuTBi03HVOS5TiRc2FdP4xd7E07L0G1kVNimHaZCXzkcUOZB9iR4uWrSQ0F3BdnNxVTlAGBQ7ZAyhZBvHMkdqgOIhZCxw9WXw2dnrSB4fcjGJ4hHTIk7uHCvlqn3rJ5UpvD3WUqqjLBCHDYhbZBdc';
+const WA_PHONE_ID = process.env.WA_PHONE_ID || '1222753480912642';
+
+async function sendWhatsAppTemplate(to) {
+  const payload = {
+    messaging_product: "whatsapp",
+    to: to,
+    type: "template",
+    template: {
+      name: "jaspers_market_order_confirmation_v1",
+      language: { code: "en_US" },
+      components: [
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: "Owner" },
+            { type: "text", text: "Update Attendance" },
+            { type: "text", text: new Date().toISOString().split('T')[0] }
+          ]
+        }
+      ]
+    }
+  };
+
+  try {
+    const res = await fetch(`https://graph.facebook.com/v25.0/${WA_PHONE_ID}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${WA_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    console.log("WhatsApp Send Result:", data);
+  } catch (err) {
+    console.error("WhatsApp Send Error:", err);
+  }
+}
+
+async function sendWhatsAppText(to, textBody) {
+  const payload = {
+    messaging_product: "whatsapp",
+    to: to,
+    type: "text",
+    text: { body: textBody }
+  };
+
+  try {
+    const res = await fetch(`https://graph.facebook.com/v25.0/${WA_PHONE_ID}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${WA_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    console.log("WhatsApp Send Text Result:", data);
+  } catch (err) {
+    console.error("WhatsApp Send Text Error:", err);
+  }
+}
+
+// Scheduler: 10 PM IST
+cron.schedule('0 22 * * *', async () => {
+  console.log('Running daily WhatsApp attendance reminder...');
+  try {
+    const ownerPhone = await db.getSetting('owner_phone');
+    if (!ownerPhone) {
+      console.log('No owner phone configured. Skipping daily reminder.');
+      return;
+    }
+    
+    await sendWhatsAppTemplate(ownerPhone);
+    whatsappSessions[ownerPhone] = { step: 1, maidId: null };
+  } catch (err) {
+    console.error('Error in cron job:', err);
+  }
+}, {
+  timezone: "Asia/Kolkata"
+});
 
 // Initialize Database
 db.initDb()
@@ -143,6 +238,7 @@ app.post('/api/attendance', async (req, res) => {
       return res.status(400).json({ error: 'maid_id, date, and status are required' });
     }
     const record = await db.saveAttendance(parseInt(maid_id), date, status, remarks);
+    notifySseClients(record);
     res.json(record);
   } catch (err) {
     console.error('Error saving attendance:', err);
@@ -162,6 +258,7 @@ app.post('/api/attendance/bulk', async (req, res) => {
     for (const rec of records) {
       if (rec.maid_id && rec.status) {
         const savedRec = await db.saveAttendance(parseInt(rec.maid_id), date, rec.status, rec.remarks);
+        notifySseClients(savedRec);
         saved.push(savedRec);
       }
     }
@@ -169,6 +266,163 @@ app.post('/api/attendance/bulk', async (req, res) => {
   } catch (err) {
     console.error('Error saving bulk attendance:', err);
     res.status(500).json({ error: 'Failed to save bulk attendance records' });
+  }
+});
+
+// 9. SSE Endpoint for Real-time updates
+app.get('/api/attendance/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  
+  sseClients.push(res);
+  
+  req.on('close', () => {
+    sseClients = sseClients.filter(client => client !== res);
+  });
+});
+
+// 10. Settings API
+app.get('/api/settings', async (req, res) => {
+  try {
+    const owner_phone = await db.getSetting('owner_phone');
+    res.json({ owner_phone: owner_phone || '' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch settings' });
+  }
+});
+
+app.post('/api/settings', async (req, res) => {
+  try {
+    const { owner_phone } = req.body;
+    await db.saveSetting('owner_phone', owner_phone);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save settings' });
+  }
+});
+
+// 11. Manual Trigger API
+app.post('/api/whatsapp/trigger', async (req, res) => {
+  try {
+    const ownerPhone = await db.getSetting('owner_phone');
+    if (!ownerPhone) {
+      return res.status(400).json({ error: 'Owner phone not configured in settings.' });
+    }
+    await sendWhatsAppTemplate(ownerPhone);
+    whatsappSessions[ownerPhone] = { step: 1, maidId: null };
+    res.json({ success: true, message: 'Message triggered' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to trigger message' });
+  }
+});
+
+// 12. WhatsApp Webhook Verification
+app.get('/api/whatsapp/webhook', (req, res) => {
+  const verify_token = process.env.WA_VERIFY_TOKEN || 'my_secure_token';
+  let mode = req.query["hub.mode"];
+  let token = req.query["hub.verify_token"];
+  let challenge = req.query["hub.challenge"];
+
+  if (mode && token) {
+    if (mode === "subscribe" && token === verify_token) {
+      console.log("WEBHOOK_VERIFIED");
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
+  } else {
+    res.sendStatus(400);
+  }
+});
+
+// 13. WhatsApp Webhook Message Receiver
+app.post('/api/whatsapp/webhook', async (req, res) => {
+  let body = req.body;
+
+  if (body.object) {
+    if (
+      body.entry &&
+      body.entry[0].changes &&
+      body.entry[0].changes[0] &&
+      body.entry[0].changes[0].value.messages &&
+      body.entry[0].changes[0].value.messages[0]
+    ) {
+      let msg = body.entry[0].changes[0].value.messages[0];
+      let phone = msg.from; // Sender's phone
+      let text = '';
+      
+      if (msg.type === 'text') {
+        text = msg.text.body.trim().toLowerCase();
+      }
+
+      // Handle "hi" / "menu"
+      if (text === 'hi' || text === 'menu' || text === 'hello') {
+        const maids = await db.getAllMaids();
+        let bodyText = `Please reply with the ID of the maid you want to update:\n\n`;
+        maids.forEach(m => {
+          bodyText += `ID ${m.id}: ${m.name}\n`;
+        });
+        whatsappSessions[phone] = { step: 1, maidId: null };
+        await sendWhatsAppText(phone, bodyText);
+        return res.sendStatus(200);
+      }
+
+      if (!whatsappSessions[phone]) {
+        whatsappSessions[phone] = { step: 1, maidId: null };
+      }
+      const session = whatsappSessions[phone];
+
+      if (session.step === 1) {
+        const maidId = parseInt(text);
+        if (isNaN(maidId)) {
+          await sendWhatsAppText(phone, 'Invalid ID. Please reply with a valid number, or type "menu" to see the list.');
+          return res.sendStatus(200);
+        }
+
+        const maid = await db.getMaidById(maidId);
+        if (!maid) {
+          await sendWhatsAppText(phone, `We could not find a maid with ID ${maidId}. Please try again.`);
+          return res.sendStatus(200);
+        }
+
+        session.step = 2;
+        session.maidId = maid.id;
+        await sendWhatsAppText(phone, `You selected ${maid.name}.\nPlease reply with attendance status:\n1: Present\n2: Absent\n3: Half-Day\n4: Paid Leave`);
+        
+      } else if (session.step === 2) {
+        let status = null;
+        if (text === '1') status = 'present';
+        else if (text === '2') status = 'absent';
+        else if (text === '3') status = 'half_day';
+        else if (text === '4') status = 'leave_paid';
+        
+        if (!status) {
+          await sendWhatsAppText(phone, 'Invalid status code. Use 1, 2, 3, or 4. Or type "menu" to restart.');
+          return res.sendStatus(200);
+        }
+
+        const maid = await db.getMaidById(session.maidId);
+        const today = new Date().toISOString().split('T')[0];
+        
+        try {
+          const record = await db.saveAttendance(session.maidId, today, status, 'Updated via WhatsApp');
+          notifySseClients(record); // Notify frontend instantly
+          await sendWhatsAppText(phone, `✅ Attendance updated to ${status} for ${maid.name} (${today}).\n\nTo update another maid, reply with their ID. Or type "menu" to see the list again.`);
+          session.step = 1;
+          session.maidId = null;
+        } catch (err) {
+          console.error('Webhook save error', err);
+          await sendWhatsAppText(phone, 'Sorry, there was an error updating your status. Please try again.');
+          session.step = 1;
+          session.maidId = null;
+        }
+      }
+    }
+    res.sendStatus(200);
+  } else {
+    res.sendStatus(404);
   }
 });
 

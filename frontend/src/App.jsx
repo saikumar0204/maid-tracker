@@ -117,6 +117,14 @@ export default function App() {
     }
   };
 
+  const handleTabClick = (tab) => {
+    if (tab === 'maids' && activeTab === 'profile-detail') {
+      handleBackToMaids();
+    } else {
+      setActiveTab(tab);
+    }
+  };
+
   return (
     <div className="app-container">
       {/* App Navigation Header */}
@@ -129,13 +137,13 @@ export default function App() {
         <nav className="nav-tabs">
           <button 
             className={`nav-tab ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => handleTabClick('dashboard')}
           >
             Dashboard
           </button>
           <button 
             className={`nav-tab ${activeTab === 'maids' || activeTab === 'profile-detail' ? 'active' : ''}`}
-            onClick={() => setActiveTab(activeTab === 'profile-detail' ? 'profile-detail' : 'maids')}
+            onClick={() => handleTabClick('maids')}
           >
             Maids List
           </button>
@@ -171,6 +179,31 @@ export default function App() {
         )}
       </main>
 
+      {/* Mobile Bottom Navigation */}
+      <nav className="bottom-nav">
+        <button 
+          className={`bottom-nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+          onClick={() => handleTabClick('dashboard')}
+        >
+          <span className="nav-icon">📊</span>
+          <span>Dashboard</span>
+        </button>
+        <button 
+          className={`bottom-nav-item ${activeTab === 'maids' || activeTab === 'profile-detail' ? 'active' : ''}`}
+          onClick={() => handleTabClick('maids')}
+        >
+          <span className="nav-icon">👥</span>
+          <span>Maids</span>
+        </button>
+        <button 
+          className="bottom-nav-item"
+          onClick={() => setIsAddOpen(true)}
+        >
+          <span className="nav-icon">➕</span>
+          <span>Add</span>
+        </button>
+      </nav>
+
       {/* Add Maid Dialog */}
       <MaidModal 
         isOpen={isAddOpen} 
@@ -193,13 +226,26 @@ export default function App() {
       {isDeleteOpen && (
         <div className="modal-overlay" onClick={() => setIsDeleteOpen(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center' }}>
-            <div className="modal-header" style={{ justifyContent: 'center' }}>
-              <h2 style={{ color: 'var(--color-absent)' }}>Remove Helper?</h2>
+            <div style={{ padding: '1.5rem 0 0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                background: 'var(--color-absent-glow)',
+                border: '1px solid var(--color-absent-border)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.5rem'
+              }}>
+                🗑️
+              </div>
+              <h2 style={{ color: 'var(--color-absent)', fontSize: '1.2rem' }}>Remove Helper?</h2>
             </div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: '1rem 0' }}>
-              Are you sure you want to remove <strong>{maidToDelete?.name}</strong>? All attendance history will be permanently deleted.
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
+              Are you sure you want to remove <strong style={{ color: 'var(--text-primary)' }}>{maidToDelete?.name}</strong>? All attendance history will be permanently deleted.
             </p>
-            <div className="form-actions" style={{ justifyContent: 'center', gap: '1rem' }}>
+            <div className="form-actions" style={{ justifyContent: 'center', gap: '0.75rem' }}>
               <button className="btn btn-secondary" onClick={() => setIsDeleteOpen(false)}>Cancel</button>
               <button className="btn btn-danger" onClick={handleConfirmDelete}>Yes, Remove</button>
             </div>

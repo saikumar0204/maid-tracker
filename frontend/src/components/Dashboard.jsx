@@ -4,6 +4,9 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [savingId, setSavingId] = useState(null); // track which maid status is saving
+  const [ownerPhone, setOwnerPhone] = useState('');
+  const [isSavingPhone, setIsSavingPhone] = useState(false);
+  const [isTriggeringMsg, setIsTriggeringMsg] = useState(false);
 
   // Fetch attendance for the selected date
   const fetchAttendance = async (date) => {
@@ -20,6 +23,41 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
 
   useEffect(() => {
     fetchAttendance(selectedDate);
+
+    // Fetch owner phone from settings
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(data => {
+        if (data.owner_phone) setOwnerPhone(data.owner_phone);
+      })
+      .catch(err => console.error('Error fetching settings:', err));
+
+    // Setup SSE connection for real-time updates
+    const eventSource = new EventSource('/api/attendance/stream');
+    eventSource.onmessage = (event) => {
+      try {
+        const updatedRecord = JSON.parse(event.data);
+        if (updatedRecord.date === selectedDate) {
+          setAttendanceRecords(prev => {
+            const idx = prev.findIndex(r => r.maid_id === updatedRecord.maid_id);
+            if (idx > -1) {
+              const copy = [...prev];
+              copy[idx] = updatedRecord;
+              return copy;
+            } else {
+              return [...prev, updatedRecord];
+            }
+          });
+          if (onAttendanceChange) onAttendanceChange();
+        }
+      } catch (e) {
+        console.error('Error parsing SSE data', e);
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
   }, [selectedDate, maids]);
 
   // Aggregate stats for the selected date
@@ -104,6 +142,39 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
     } catch (err) {
       console.error('Error saving remarks:', err);
     }
+  };
+
+  const handleSavePhone = async () => {
+    setIsSavingPhone(true);
+    try {
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner_phone: ownerPhone })
+      });
+      alert('Phone number saved successfully!');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to save phone number');
+    }
+    setIsSavingPhone(false);
+  };
+
+  const handleTriggerMessage = async () => {
+    setIsTriggeringMsg(true);
+    try {
+      const res = await fetch('/api/whatsapp/trigger', { method: 'POST' });
+      if (res.ok) {
+        alert('WhatsApp reminder sent!');
+      } else {
+        const err = await res.json();
+        alert('Failed: ' + err.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to trigger message');
+    }
+    setIsTriggeringMsg(false);
   };
 
   return (
@@ -260,6 +331,34 @@ export default function Dashboard({ maids, onSelectMaid, onAttendanceChange }) {
 
         {/* Right Side: Legend & Quick Guideline Cards */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          
+          <div className="glass-card">
+            <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>WhatsApp Settings</h3>
+            <div className="form-group" style={{ marginBottom: '1rem' }}>
+              <label className="form-label" style={{ fontSize: '0.85rem' }}>Owner Phone Number (e.g. 919876543210)</label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={ownerPhone} 
+                  onChange={(e) => setOwnerPhone(e.target.value)}
+                  placeholder="e.g. 919876543210"
+                />
+                <button className="primary-btn" onClick={handleSavePhone} disabled={isSavingPhone} style={{ padding: '0.5rem 1rem' }}>
+                  {isSavingPhone ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+            <button 
+              className="primary-btn" 
+              style={{ width: '100%', background: 'var(--success)' }} 
+              onClick={handleTriggerMessage} 
+              disabled={isTriggeringMsg}
+            >
+              {isTriggeringMsg ? 'Sending...' : 'Send WhatsApp Reminder Now'}
+            </button>
+          </div>
+
           <div className="glass-card">
             <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Legend & Quick Help</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
